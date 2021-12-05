@@ -9,7 +9,6 @@ class Coordinate {
 }
 
 function find_position_with_aim(moves: Move[]): Coordinate {
-
   const position = new Coordinate();
 
   let aim = 0;

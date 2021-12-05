@@ -9,7 +9,6 @@ class Coordinate {
 }
 
 function find_position(moves: Move[]): Coordinate {
-
   const position = new Coordinate();
 
   for (const move of moves) {
