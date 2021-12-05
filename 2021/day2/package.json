@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "@types/node": "^16.11.11"
+  },
+  "devDependencies": {
+    "eslint": "latest",
+    "eslint-config-standard-with-typescript": "latest"
+  }
+}
