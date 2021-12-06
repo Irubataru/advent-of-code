@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "@types/node": "latest"
+  },
+  "devDependencies": {
+    "eslint": "latest",
+    "prettier": "latest"
+  }
+}
