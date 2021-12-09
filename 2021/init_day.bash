@@ -11,5 +11,3 @@ ln -s ../eslintrc.json .eslintrc.json
 
 cp ../package.json .
 npm i
-
-touch "${dir}.ts"
