@@ -4,30 +4,24 @@ use std::io::{prelude::*, BufReader};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let filename = &args[1];
-    let file = File::open(filename).unwrap();
-    let reader = BufReader::new(file);
-    let lines: Vec<String> = reader
-        .lines()
-        .filter(|item| item.is_ok())
-        .map(|item| item.unwrap())
-        .collect();
+    let reader = BufReader::new(File::open(&args[1]).unwrap());
 
     let mut elf_calories: Vec<i32> = Vec::new();
 
-    let mut calories = 0;
-    for line in lines {
+    let mut aggregate = 0;
+    for line in reader.lines() {
+        let line = line.expect("Failed to read line from file");
         if line == "" {
-            elf_calories.push(calories);
-            calories = 0;
+            elf_calories.push(aggregate);
+            aggregate = 0;
             continue;
         }
 
-        calories += line.parse::<i32>().unwrap();
+        aggregate += line.parse::<i32>().expect("Expected a list of numbers");
     }
 
-    if calories != 0  {
-        elf_calories.push(calories);
+    if aggregate != 0  {
+        elf_calories.push(aggregate);
     }
 
     elf_calories.sort();
