@@ -52,6 +52,25 @@ fn print_tops(state: &Vec<Vec<char>>) {
     print!("\n");
 }
 
+fn apply_move(state: &mut Vec<Vec<char>>, stack_move: Move, reverse: bool) {
+    let len = state[stack_move.from].len();
+    let mut crane: Vec<char> = state[stack_move.from]
+        .iter()
+        .skip(len - stack_move.count)
+        .take(stack_move.count)
+        .cloned()
+        .collect();
+
+    if reverse {
+        crane.reverse();
+    }
+
+    for i in 0..stack_move.count {
+        state[stack_move.from].pop();
+        state[stack_move.to].push(crane[i]);
+    }
+}
+
 fn drive_crane(reverse: bool) {
     let mut stacks = read_init();
 
@@ -60,24 +79,7 @@ fn drive_crane(reverse: bool) {
 
     for line in reader.lines() {
         let line = line.expect("Failed to read line.");
-        let stack_move = read_move(line);
-
-        let len = stacks[stack_move.from].len();
-        let mut crane: Vec<char> = stacks[stack_move.from]
-            .iter()
-            .skip(len - stack_move.count)
-            .take(stack_move.count)
-            .cloned()
-            .collect();
-
-        if reverse {
-            crane.reverse();
-        }
-
-        for i in 0..stack_move.count {
-            stacks[stack_move.from].pop();
-            stacks[stack_move.to].push(crane[i]);
-        }
+        apply_move(&mut stacks, read_move(line), reverse);
     }
 
     print_tops(&stacks);
