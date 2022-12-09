@@ -3,10 +3,6 @@ use std::env;
 use std::fs::File;
 use std::io::{prelude::*, BufReader};
 
-fn norm2(x: f32, y: f32) -> f32 {
-    (x.powi(2) + y.powi(2)).sqrt()
-}
-
 fn next_head(head: (i32, i32), dir: &str) -> (i32, i32) {
     match dir {
         "U" => (head.0, head.1 + 1),
@@ -21,7 +17,7 @@ fn next_tail(head: (i32, i32), tail: (i32, i32)) -> (i32, i32) {
     let x = head.0 - tail.0;
     let y = head.1 - tail.1;
     
-    if norm2(x as f32, y as f32) < 1.5 {
+    if x.abs() < 2 && y.abs() < 2 {
         return (tail.0, tail.1);
     }
 
