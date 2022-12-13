@@ -67,26 +67,9 @@ impl Element {
             Element::Single(single) => vec![Element::Single(*single)],
         }
     }
-
-    fn to_string(&self) -> String {
-        match self {
-            Element::Multiple(multiple) => {
-                let mut result = String::from("[");
-                for item in multiple {
-                    result.push_str(&item.to_string());
-                    result.push_str(",");
-                }
-                result.push_str("]");
-                result
-            }
-            Element::Single(single) => format!("{}", single),
-        }
-    }
 }
 
 fn cmp(lhs: &Element, rhs: &Element) -> std::cmp::Ordering {
-    // println!("cmp({}, {})", lhs.to_string(), rhs.to_string());
-
     if let Element::Single(lhs_single) = lhs {
         if let Element::Single(rhs_single) = rhs {
             return lhs_single.cmp(rhs_single);
@@ -122,7 +105,7 @@ fn main() {
     let mut packets: Vec<Element> = Vec::new();
 
     let mut index = 1;
-    let mut count = 0;
+    let mut part1 = 0;
     loop {
         let line = match reader.next() {
             Some(line) => line.expect("Failed to read line"),
@@ -137,7 +120,7 @@ fn main() {
         let rhs = parse_line(&reader.next().unwrap().unwrap());
 
         if cmp(&lhs, &rhs) != Ordering::Greater {
-            count += index;
+            part1 += index;
         }
 
         packets.push(lhs);
@@ -146,43 +129,25 @@ fn main() {
         index += 1;
     }
 
-    println!("Part 1: {}", count);
+    println!("Part 1: {}", part1);
 
-    packets.push(parse_line("[[2]]"));
-    packets.push(parse_line("[[6]]"));
+    let marker_start = parse_line("[[2]]");
+    let marker_end = parse_line("[[6]]");
+
+    packets.push(marker_start.clone());
+    packets.push(marker_end.clone());
     packets.sort_by(|x, y| cmp(x, y));
 
-    let mut start = 0;
-    let mut stop = 0;
+    let start = packets
+        .iter()
+        .position(|e| cmp(e, &marker_start) == Ordering::Equal)
+        .unwrap()
+        + 1;
+    let stop = packets
+        .iter()
+        .position(|e| cmp(e, &marker_end) == Ordering::Equal)
+        .unwrap()
+        + 1;
 
-    for (i, packet) in packets.iter().enumerate() {
-        match packet {
-            Element::Multiple(mult) => {
-                if mult.len() != 1 {
-                    continue;
-                }
-
-                match &mult[0] {
-                    Element::Multiple(mult2) => {
-                        if mult2.len() != 1 {
-                            continue;
-                        }
-
-                        match mult2[0] {
-                            Element::Single(x) => match x {
-                                2 => start = i + 1,
-                                6 => stop = i + 1,
-                                _ => (),
-                            },
-                            _ => (),
-                        }
-                    }
-                    _ => (),
-                }
-            }
-            _ => (),
-        }
-    }
-
-    println!("{} * {} = {}", start, stop, start * stop);
+    println!("Part 2: {}", start * stop);
 }
