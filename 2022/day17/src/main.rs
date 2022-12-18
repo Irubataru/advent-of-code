@@ -1,72 +1,14 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::{prelude::*, BufReader};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct Coordinate {
-    x: usize,
-    y: usize,
-}
+static CACHE: usize = 10000;
+static BUFFER: usize = 200;
+static TOP: usize = 50;
 
-fn shift_wind(shape: &mut Vec<Coordinate>, to_right: bool, solids: &Vec<Vec<bool>>) {
-    for c in &*shape {
-        if to_right && (c.x == 6 || solids[c.y][c.x + 1]) {
-            return;
-        }
-
-        if !to_right && (c.x == 0 || solids[c.y][c.x - 1]) {
-            return;
-        }
-    }
-
-    for mut pos in shape {
-        pos.x = if to_right { pos.x + 1 } else { pos.x - 1 };
-    }
-}
-
-fn shift_height(shape: &mut Vec<Coordinate>, y: i32) {
-    for mut pos in shape {
-        pos.y = (pos.y as i32 + y) as usize;
-    }
-}
-
-fn print_tower(solids: &Vec<Vec<bool>>, shape: &Vec<Coordinate>) {
-    for i in 0..solids.len() {
-        let i = solids.len() - 1 - i;
-
-        for j in 0..solids[i].len() {
-            if shape.contains(&Coordinate { x: j, y: i }) {
-                print!("@");
-                continue;
-            }
-
-            print!("{}", if solids[i][j] { "#" } else { "." });
-        }
-
-        println!("");
-    }
-
-    println!("-------\n");
-}
-
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    let line = BufReader::new(File::open(&args[1]).unwrap())
-        .lines()
-        .next()
-        .expect("Input should have 1 line")
-        .unwrap();
-
-    let moves = line
-        .chars()
-        .map(|c| match c {
-            '>' => true,
-            _ => false,
-        })
-        .collect::<Vec<bool>>();
-
-    let shapes = vec![
+fn get_shapes() -> Vec<Vec<Coordinate>> {
+    vec![
         vec![
             Coordinate { x: 2, y: 0 },
             Coordinate { x: 3, y: 0 },
@@ -99,115 +41,180 @@ fn main() {
             Coordinate { x: 2, y: 0 },
             Coordinate { x: 3, y: 0 },
         ],
-    ];
+    ]
+}
 
-    let mut index = 0;
-    let mut shape_index = 0;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct Coordinate {
+    x: usize,
+    y: usize,
+}
 
-    // let mut solids: HashSet<Coordinate> = HashSet::new();
-    //
+fn shift_wind(shape: &mut Vec<Coordinate>, to_right: bool, solids: &Vec<Vec<bool>>) {
+    for c in &*shape {
+        if to_right && (c.x == 6 || solids[c.y][c.x + 1]) {
+            return;
+        }
 
-    let cache = 10000;
-    let buffer = 200;
+        if !to_right && (c.x == 0 || solids[c.y][c.x - 1]) {
+            return;
+        }
+    }
 
-    let mut y_floor: u128 = 0;
-    let mut y_ceil: usize = 0;
-    let mut solids = vec![vec![false; 7]; cache];
+    for mut pos in shape {
+        pos.x = if to_right { pos.x + 1 } else { pos.x - 1 };
+    }
+}
+
+fn shift_height(shape: &mut Vec<Coordinate>, y: usize) {
+    for mut pos in shape {
+        pos.y = pos.y + y;
+    }
+}
+
+fn can_drop(shape: &Vec<Coordinate>, solids: &Vec<Vec<bool>>) -> bool {
+    for c in shape {
+        if solids[c.y - 1][c.x] {
+            return false;
+        }
+    }
+    true
+}
+
+fn drop(shape: &mut Vec<Coordinate>) {
+    for mut pos in shape {
+        pos.y = pos.y - 1;
+    }
+}
+
+fn place(shape: &Vec<Coordinate>, solids: &mut Vec<Vec<bool>>, ceil: usize) -> usize {
+    let mut ceil = ceil;
+
+    for c in shape {
+        solids[c.y][c.x] = true;
+        ceil = std::cmp::max(ceil, c.y);
+    }
+
+    ceil
+}
+
+fn update_buffer(solids: &mut Vec<Vec<bool>>, floor: usize, ceil: usize) -> (usize, usize) {
+    let floor = floor + BUFFER;
+    let ceil = ceil - BUFFER;
+
+    for i in 0..CACHE - BUFFER {
+        for j in 0..7 {
+            solids[i][j] = solids[i + BUFFER][j];
+        }
+    }
+
+    for i in CACHE - BUFFER..CACHE {
+        for j in 0..7 {
+            solids[i][j] = false;
+        }
+    }
+
+    (floor, ceil)
+}
+
+fn clone_top(solids: &Vec<Vec<bool>>, ceil: usize) -> Vec<Vec<bool>> {
+    let mut cave_top = vec![vec![false; 7]; TOP];
+
+    for i in 0..TOP {
+        let y = ceil - (TOP - 1) + i;
+        for j in 0..7 {
+            cave_top[i][j] = solids[y][j];
+        }
+    }
+
+    cave_top
+}
+
+fn simulate(target: u64, moves: &Vec<bool>) -> u64 {
+    let shapes = get_shapes();
+
+    let mut floor: usize = 0;
+    let mut ceil: usize = 0;
+    let mut solids = vec![vec![false; 7]; CACHE];
 
     for i in 0..7 {
         solids[0][i] = true;
     }
 
-    let mut num_rocks: u128 = 0;
+    // Keep a cache of states that we can compare with to find cycles
+    let mut checkpoints: HashMap<(usize, Vec<Vec<bool>>), (u64, u64)> = HashMap::new();
 
-    let mut checkpoints : HashMap<(usize, Vec<Vec<bool>>), (u128, u128)> = HashMap::new();
-
-    let target = 1000000000000;
-
+    let mut index = 0;
+    let mut shape_index = 0;
+    let mut num_rocks: u64 = 0;
     while num_rocks < target {
         let mut shape = shapes[shape_index].clone();
 
-        if num_rocks % 100000 == 0 {
-            println!("{} {}", num_rocks, y_floor + y_ceil as u128);
-        }
-
-        shift_height(&mut shape, y_ceil as i32 + 4);
-        // print_tower(&solids, &shape);
+        // Place rock at its start position
+        shift_height(&mut shape, ceil + 4);
 
         loop {
             shift_wind(&mut shape, moves[index], &solids);
             index = (index + 1) % moves.len();
 
-            let mut will_intersect = false;
-            for c in &shape {
-                if solids[c.y - 1][c.x] {
-                    will_intersect = true;
-                    break;
-                }
+            if can_drop(&shape, &solids) {
+                drop(&mut shape);
+                continue;
             }
 
-            if will_intersect {
-                for c in &shape {
-                    solids[c.y][c.x] = true;
-                    y_ceil = std::cmp::max(y_ceil, c.y);
-                }
+            ceil = place(&shape, &mut solids, ceil);
 
-                if y_ceil + buffer > cache {
-
-                    y_floor += buffer as u128;
-                    y_ceil -= buffer;
-
-                    for i in 0..cache-buffer {
-                        for j in 0..7 {
-                            solids[i][j] = solids[i+buffer][j];
-
-                        }
-                    }
-
-                    for i in cache-buffer..cache {
-                        for j in 0..7 {
-                            solids[i][j] = false;
-                        }
-                    }
-                }
-
-
-                break;
+            // Update the sliding window so we only store CACHE rows
+            if ceil + BUFFER > CACHE {
+                (floor, ceil) = update_buffer(&mut solids, floor, ceil);
             }
 
-            // print_tower(&solids, &shape);
-            shift_height(&mut shape, -1);
+            break;
         }
 
         num_rocks += 1;
         shape_index = (shape_index + 1) % shapes.len();
 
-        if shape_index == 0 && y_ceil > 1000 {
+        // Loop for a cycle every time we start over withe the rocks
+        if shape_index == 0 && ceil > TOP {
+            let height = floor + ceil;
+            let cave_top = clone_top(&solids, ceil);
 
-            let mut cave_top = vec![vec![false; 7]; 1000];
-
-            for i in 0..1000 {
-                let y = y_ceil - 999 + i;
-                for j in 0..7 {
-                    cave_top[i][j] = solids[y][j];
-                }
-            }
-
-            let height = y_floor as u128 + y_ceil as u128;
-
-            if let Some((prev_count, prev_height)) = checkpoints.insert((index, cave_top), (num_rocks, height)) {
-
+            // See if we find a cycle. A cycle occues if the wind index is the same
+            // and the TOP of the tower is the same
+            if let Some((prev_count, prev_height)) =
+                checkpoints.insert((index, cave_top), (num_rocks, height as u64))
+            {
                 let cycle_length = num_rocks - prev_count;
                 let num_cycles = (target - num_rocks) / cycle_length;
                 num_rocks += cycle_length * num_cycles;
 
-                y_floor += (height - prev_height) * num_cycles;
+                floor += (height - prev_height as usize) * num_cycles as usize;
+
+                checkpoints.clear();
             }
-
-
         }
     }
 
-    println!("Part 1: {}", y_floor + y_ceil as u128);
-    // print_tower(&solids, &Vec::new());
+    floor as u64 + ceil as u64
+}
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    let line = BufReader::new(File::open(&args[1]).unwrap())
+        .lines()
+        .next()
+        .expect("Input should have 1 line")
+        .unwrap();
+
+    let moves = line
+        .chars()
+        .map(|c| match c {
+            '>' => true,
+            _ => false,
+        })
+        .collect::<Vec<bool>>();
+
+    println!("Part 1: {}", simulate(2022, &moves));
+    println!("Part 2: {}", simulate(1000000000000, &moves));
 }
