@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::env;
 use std::fs::File;
 use std::io::{prelude::*, BufReader};
@@ -6,7 +6,7 @@ use std::io::{prelude::*, BufReader};
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 struct Coordinate {
     x: i32,
-    y: i32
+    y: i32,
 }
 
 impl Coordinate {
@@ -23,75 +23,97 @@ impl Coordinate {
     }
 }
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    let reader = BufReader::new(File::open(&args[1]).unwrap());
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+struct Sensor {
+    pos: Coordinate,
+    beacon_pos: Coordinate,
+    distance_to_beacon: i32,
+}
 
-    let mut sensor_beacon_pairs: Vec<(Coordinate, Coordinate, i32)> = Vec::new();
+impl Sensor {
+    fn new(sensor: &Coordinate, beacon: &Coordinate) -> Self {
+        Sensor {
+            pos: *sensor,
+            beacon_pos: *beacon,
+            distance_to_beacon: sensor.dist(&beacon),
+        }
+    }
 
-    for line in reader.lines() {
-        let line = line.expect("Error reading line.");
-
-        let mut parts = line.split(":");
+    fn from_str(s: &str) -> Self {
+        let mut parts = s.split(":");
 
         let sensor = Coordinate::from_str(parts.next().unwrap());
         let beacon = Coordinate::from_str(parts.next().unwrap());
 
-        sensor_beacon_pairs.push((
-                sensor,
-                beacon,
-                sensor.dist(&beacon)
-        ));
+        Self::new(&sensor, &beacon)
     }
+}
 
+fn part1(sensors: &Vec<Sensor>) {
     let y_line = 2000000;
+    let mut not_possible: HashSet<Coordinate> = HashSet::new();
+    for sensor in sensors {
+        let dist = (sensor.pos.y - y_line).abs();
 
-    let mut not_possible : HashSet<Coordinate> = HashSet::new();
-
-    for (sensor, beacon, d) in &sensor_beacon_pairs {
-
-        let dist = (sensor.y - y_line).abs();
-
-        for i in dist..d + 1 {
+        for i in dist..sensor.distance_to_beacon + 1 {
             not_possible.insert(Coordinate {
-                x: sensor.x + (i - dist),
-                y: y_line
+                x: sensor.pos.x + (i - dist),
+                y: y_line,
             });
             not_possible.insert(Coordinate {
-                x: sensor.x - (i - dist),
-                y: y_line
+                x: sensor.pos.x - (i - dist),
+                y: y_line,
             });
         }
     }
 
-    for (_, beacon, _) in &sensor_beacon_pairs {
-        not_possible.remove(beacon);
+    for sensor in sensors {
+        not_possible.remove(&sensor.beacon_pos);
     }
-
-    sensor_beacon_pairs.sort_by(|x, y| x.2.cmp(&y.2));
-    sensor_beacon_pairs.reverse();
 
     println!("Part 1: {}", not_possible.len());
+}
 
-    for i in 3316867..4000001 {
-        if (i % 1000) == 0 {
-            println!("x: {}", i);
-        }
+fn part2(sensors: &Vec<Sensor>) {
+    // For part 2 we only scan along the edge of every beacon's range. If the result is unique,
+    // then the answer has to lie on one of these edges.
 
-        for j in 0..4000001 {
-            let mut all_okay = true;
+    let bounds = 4000000;
+    for sensor in sensors {
+        for i in 0..sensor.distance_to_beacon + 2 {
+            let x = sensor.pos.x + sensor.distance_to_beacon + 1 - i;
+            let y = sensor.pos.y + i;
 
-            for (sensor, beacon, d) in &sensor_beacon_pairs {
-                if (sensor.x - i).abs() + (sensor.y - j).abs() <= *d {
-                    all_okay = false;
-                    break;
-                }
+            if x < 0 || x > bounds {
+                continue;
             }
 
-            if all_okay {
-                println!("Part 2: ({}, {}) => {}", i, j, (i as u128) * 4000000 + j as u128);
-                return;
+            if y < 0 || y > bounds {
+                continue;
             }
+
+            if sensors
+                .iter()
+                .any(|s| (s.pos.x - x).abs() + (s.pos.y - y).abs() <= s.distance_to_beacon)
+            {
+                continue;
+            }
+
+            println!("Part 2: {}", (x as u128) * (bounds as u128) + y as u128);
+            return;
         }
     }
+}
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    let reader = BufReader::new(File::open(&args[1]).unwrap());
+
+    let sensors = reader
+        .lines()
+        .map(|l| Sensor::from_str(&l.expect("Failed to read line")))
+        .collect::<Vec<_>>();
+
+    part1(&sensors);
+    part2(&sensors);
 }
