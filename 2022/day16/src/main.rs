@@ -1,19 +1,46 @@
+use core::hash::Hash;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::File;
 use std::hash::Hasher;
 use std::io::{prelude::*, BufReader};
-use core::hash::Hash;
+
+type Id = u16;
+type PathMap = HashMap<Id, i32>;
+type DistanceMap = HashMap<Id, PathMap>;
+type Network = HashMap<Id, Valve>;
+
+struct NameIdMap {
+    map: HashMap<String, Id>,
+}
+
+impl NameIdMap {
+    fn new() -> Self {
+        NameIdMap {
+            map: HashMap::new(),
+        }
+    }
+
+    fn get(&mut self, name: &str) -> Id {
+        let name = name.to_string();
+
+        if !self.map.contains_key(&name) {
+            self.map.insert(name.clone(), self.map.len() as Id);
+        }
+
+        self.map[&name]
+    }
+}
 
 #[derive(Debug, Clone)]
 struct Valve {
     flow_rate: i32,
-    tunnels: Vec<String>,
+    tunnels: Vec<Id>,
 }
 
 impl Valve {
-    fn from(text: &str) -> (String, Self) {
+    fn from_str(text: &str, name_id_map: &mut NameIdMap) -> (Id, Self) {
         let mut parts = text.split(";");
         let mut first = parts.next().unwrap().split(",");
         let name = first.next().unwrap().to_string();
@@ -23,66 +50,74 @@ impl Valve {
             .next()
             .unwrap()
             .split(",")
-            .map(|s| s.to_string())
+            .map(|s| name_id_map.get(s))
             .collect::<Vec<_>>();
 
-        (name, Self { flow_rate, tunnels })
+        (name_id_map.get(&name), Self { flow_rate, tunnels })
     }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+struct Agent {
+    pos: Id,
+    time: i32,
 }
 
 #[derive(Clone, Debug)]
 struct Sequence {
     score: i32,
-    time: i32,
-    open_valves: Vec<String>,
-    pos: String,
+    open_valves: Vec<Id>,
+    agent: Agent,
 }
 
 impl Sequence {
-    fn new(start: &str) -> Self {
+    fn new(start: Id) -> Self {
         Self {
             score: 0,
-            time: 1,
             open_valves: Vec::new(),
-            pos: start.to_string(),
+            agent: Agent {
+                pos: start,
+                time: 1,
+            },
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct SequencePair {
+struct SequenceMulti {
     score: i32,
-    time_you: i32,
-    time_ele: i32,
-    open_valves: Vec<String>,
-    pos_you: String,
-    pos_ele: String
+    open_valves: Vec<Id>,
+    agent1: Agent,
+    agent2: Agent,
 }
 
-impl Hash for SequencePair {
+impl Hash for SequenceMulti {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.score.hash(state);
-        
-        let time = self.time_you + self.time_ele;
+
+        let time = self.agent1.time + self.agent2.time;
         time.hash(state);
 
-        let mut pos = format!("{}{}", self.pos_you, self.pos_ele).chars().collect::<Vec<char>>();
-        pos.sort();
+        let pos = self.agent1.pos + self.agent2.pos;
         pos.hash(state);
 
         self.open_valves.hash(state);
     }
 }
 
-impl SequencePair {
-    fn new(start: &str) -> Self {
+impl SequenceMulti {
+    fn new(start: Id) -> Self {
         Self {
             score: 0,
-            time_you: 1,
-            time_ele: 1,
             open_valves: Vec::new(),
-            pos_you: start.to_string(),
-            pos_ele: start.to_string()
+            agent1: Agent {
+                pos: start,
+                time: 5,
+            },
+            agent2: Agent {
+                pos: start,
+                time: 5,
+            },
         }
     }
 
@@ -93,11 +128,11 @@ impl SequencePair {
     }
 }
 
-fn shortest_path(from: &String, valves: &HashMap<String, Valve>) -> HashMap<String, i32> {
-    let mut costs: HashMap<String, i32> = valves.keys().map(|n| (n.clone(), i32::MAX)).collect();
-    let mut open_nodes: HashSet<String> = HashSet::new();
+fn shortest_path(from: Id, valves: &Network) -> PathMap {
+    let mut costs: PathMap = valves.keys().map(|n| (*n, i32::MAX)).collect();
+    let mut open_nodes: HashSet<Id> = HashSet::new();
 
-    open_nodes.insert(from.clone());
+    open_nodes.insert(from);
 
     for node in &open_nodes {
         costs.insert(node.clone(), 0);
@@ -124,149 +159,147 @@ fn shortest_path(from: &String, valves: &HashMap<String, Valve>) -> HashMap<Stri
     return costs;
 }
 
-fn part1(valves: &HashMap<String, Valve>) {
+fn create_distance_map(valves: &Network) -> DistanceMap {
+    valves
+        .iter()
+        .map(|(k, _)| {
+            let mut paths = shortest_path(*k, &valves);
+
+            // We want to remove keys where we can't get to the valve and where
+            // the target has 0 flow to save resources
+            let invalid = paths
+                .iter()
+                .filter(|(k, &v)| v >= 30 || valves[k].flow_rate == 0)
+                .map(|(&k, _)| k)
+                .collect::<Vec<_>>();
+
+            for key in invalid {
+                paths.remove(&key);
+            }
+
+            (k.clone(), paths)
+        })
+        .collect()
+}
+
+fn part1(valves: &Network, start: Id) {
     let mut best_score = 0;
     let mut sequences: Vec<Sequence> = Vec::new();
 
-    let mut shortest_path_cache: HashMap<String, HashMap<String, i32>> = HashMap::new();
+    let distance_map = create_distance_map(valves);
 
-    sequences.push(Sequence::new("AA"));
+    sequences.push(Sequence::new(start));
 
     while let Some(seq) = sequences.pop() {
-        if !shortest_path_cache.contains_key(&seq.pos) {
-            shortest_path_cache.insert(seq.pos.clone(), shortest_path(&seq.pos, &valves));
-        }
-
-        let paths = &shortest_path_cache[&seq.pos];
+        let paths = &distance_map[&seq.agent.pos];
 
         for (next, dist) in paths {
             let valve = &valves[next];
-
-            if valve.flow_rate == 0 {
-                continue;
-            }
 
             if seq.open_valves.contains(&next) {
                 continue;
             }
 
-            if seq.time + dist > 29 {
+            if seq.agent.time + dist > 29 {
                 continue;
             }
 
-            let mut next_seq = seq.clone();
-            next_seq.time += dist + 1;
-            next_seq.open_valves.push(next.clone());
-            next_seq.open_valves.sort();
-            next_seq.pos = next.clone();
-            next_seq.score += valve.flow_rate * (30 - next_seq.time + 1);
+            let mut seq = seq.clone();
+            seq.agent.time += dist + 1;
+            seq.open_valves.push(next.clone());
+            seq.open_valves.sort();
+            seq.agent.pos = next.clone();
+            seq.score += valve.flow_rate * (30 - seq.agent.time + 1);
 
-            if next_seq.score > best_score {
-                best_score = next_seq.score;
+            if seq.score > best_score {
+                best_score = seq.score;
             }
 
-            sequences.push(next_seq);
+            sequences.push(seq);
         }
     }
 
     println!("Part 1: {}", best_score);
 }
 
-fn part2(valves: &HashMap<String, Valve>) {
-    let mut best_score = 0;
-    let mut sequences: Vec<SequencePair> = Vec::new();
+fn find_next_moves(
+    agent_id: i32,
+    current: &SequenceMulti,
+    valves: &Network,
+    distance_map: &DistanceMap,
+    cache: &HashSet<u64>,
+) -> Vec<SequenceMulti> {
+    let mut result: Vec<SequenceMulti> = Vec::new();
 
-    let mut shortest_path_cache: HashMap<String, HashMap<String, i32>> = HashMap::new();
+    let agent = if agent_id == 0 {
+        current.agent1
+    } else {
+        current.agent2
+    };
 
-    let mut previous : HashSet<u64> = HashSet::new();
+    let paths = &distance_map[&agent.pos];
 
-    sequences.push(SequencePair::new("AA"));
+    for (next, dist) in paths {
+        let valve = &valves[next];
 
-    while let Some(seq) = sequences.pop() {
-
-        previous.insert(seq.get_hash());
-
-        if !shortest_path_cache.contains_key(&seq.pos_you) {
-            shortest_path_cache.insert(seq.pos_you.clone(), shortest_path(&seq.pos_you, &valves));
-        }
-
-        let paths = &shortest_path_cache[&seq.pos_you];
-
-        for (next, dist) in paths {
-            let valve = &valves[next];
-
-            if valve.flow_rate == 0 {
-                continue;
-            }
-
-            if seq.open_valves.contains(next) {
-                continue;
-            }
-
-            if seq.time_you + dist > 26 {
-                continue;
-            }
-
-            let mut next_seq = seq.clone();
-            next_seq.time_you += dist + 1;
-            next_seq.open_valves.push(next.clone());
-            next_seq.pos_you = next.clone();
-            next_seq.score += valve.flow_rate * (26 - next_seq.time_you + 1);
-
-            if previous.contains(&next_seq.get_hash()) {
-                println!("Removed symmetry ({})", previous.len());
-                continue;
-            }
-
-            if next_seq.score > best_score {
-                best_score = next_seq.score;
-            }
-
-            sequences.push(next_seq);
-        }
-
-        if seq.pos_you == seq.pos_ele {
+        if current.open_valves.contains(next) {
             continue;
         }
 
-        if !shortest_path_cache.contains_key(&seq.pos_ele) {
-            shortest_path_cache.insert(seq.pos_ele.clone(), shortest_path(&seq.pos_ele, &valves));
+        if agent.time + dist > 29 {
+            continue;
         }
 
-        let paths = &shortest_path_cache[&seq.pos_ele];
+        let mut next_seq = current.clone();
 
-        for (next, dist) in paths {
-            let valve = &valves[next];
+        let agent = if agent_id == 0 {
+            &mut next_seq.agent1
+        } else {
+            &mut next_seq.agent2
+        };
 
-            if valve.flow_rate == 0 {
-                continue;
-            }
+        agent.time += dist + 1;
+        agent.pos = *next;
 
-            if seq.open_valves.contains(next) {
-                continue;
-            }
+        next_seq.open_valves.push(*next);
+        next_seq.open_valves.sort();
+        next_seq.score += valve.flow_rate * (30 - agent.time + 1);
 
-            if seq.time_ele + dist > 26 {
-                continue;
-            }
+        if cache.contains(&next_seq.get_hash()) {
+            continue;
+        }
 
-            let mut next_seq = seq.clone();
-            next_seq.time_ele += dist + 1;
-            next_seq.open_valves.push(next.clone());
-            next_seq.open_valves.sort();
-            next_seq.pos_ele = next.clone();
-            next_seq.score += valve.flow_rate * (26 - next_seq.time_ele + 1);
+        result.push(next_seq);
+    }
 
-            if previous.contains(&next_seq.get_hash()) {
-                println!("Removed symmetry ({})", previous.len());
-                continue;
-            }
+    result
+}
 
-            if next_seq.score > best_score {
-                best_score = next_seq.score;
-            }
+fn part2(valves: &Network, start: Id) {
+    let mut best_score = 0;
+    let mut sequences: Vec<SequenceMulti> = Vec::new();
 
-            sequences.push(next_seq);
+    let distance_map = create_distance_map(valves);
+
+    // Use a hash of previous branches to break the symmetry of swapping agent1 <-> agent2
+    let mut previously_handled: HashSet<u64> = HashSet::new();
+
+    sequences.push(SequenceMulti::new(start));
+
+    while let Some(seq) = sequences.pop() {
+        previously_handled.insert(seq.get_hash());
+        best_score = std::cmp::max(best_score, seq.score);
+
+        for next_move in find_next_moves(0, &seq, &valves, &distance_map, &previously_handled) {
+            sequences.push(next_move);
+        }
+
+        if seq.agent1.pos == seq.agent2.pos {
+            continue;
+        }
+
+        for next_move in find_next_moves(1, &seq, &valves, &distance_map, &previously_handled) {
+            sequences.push(next_move);
         }
     }
 
@@ -277,12 +310,15 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let reader = BufReader::new(File::open(&args[1]).unwrap());
 
+    let mut name_id_map: NameIdMap = NameIdMap::new();
+
     let valves = reader
         .lines()
-        .map(|l| Valve::from(&l.unwrap()))
-        .collect::<HashMap<String, Valve>>();
+        .map(|l| Valve::from_str(&l.unwrap(), &mut name_id_map))
+        .collect::<HashMap<Id, Valve>>();
 
-    part1(&valves);
-    part2(&valves);
+    let start = name_id_map.get("AA");
+
+    part1(&valves, start);
+    part2(&valves, start);
 }
-
