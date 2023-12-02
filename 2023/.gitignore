@@ -1,0 +1,5 @@
+inputs/
+.lsp/
+.nrepl-port
+.cpcache/
+.clj-kondo/
