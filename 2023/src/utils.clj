@@ -58,10 +58,10 @@
   [coll-1 coll-2]
   (loop [s1 coll-1
          s2 coll-2]
-    (cond (and (empty? s1) (empty? s2)) 0           ; Both vectors are exhausted and are equal
-          (empty? s1) -1                          ; Vector 1 is shorter, so it's "smaller"
-          (empty? s2) 1                           ; Vector 2 is shorter, so it's "smaller"
+    (cond (and (empty? s1) (empty? s2))0
+          (empty? s1) -1
+          (empty? s2) 1
           :else (let [cmp (compare (first s1) (first s2))]
                   (if (zero? cmp)
-                    (recur (rest s1) (rest s2)) ; Elements are equal, compare the next position
+                    (recur (rest s1) (rest s2))
                     cmp)))))
