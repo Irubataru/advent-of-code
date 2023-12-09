@@ -29,7 +29,10 @@
   "Find the previous element in the sequence by sequentially adding the last
   item in the diff sequences"
   [nums]
-  (reduce + (map last (diff-seqs nums))))
+  (->> nums
+       diff-seqs
+       (map last)
+       (reduce +)))
 
 
 (defn part-1
@@ -47,7 +50,11 @@
   "Find the previous element in the sequence by sequentially subtracting the
   first item in the diff sequences"
   [nums]
-  (reduce #(- %2 %1) (reverse (map first (diff-seqs nums)))))
+  (->> nums
+       diff-seqs
+       (map first)
+       reverse
+       (reduce #(- %2 %1))))
 
 
 (defn part-2

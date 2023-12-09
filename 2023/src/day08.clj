@@ -18,22 +18,26 @@
 
 (defn parse-input
   [input]
-  (let [[instructions node-map] (utils/to-blocks input)]
-    {:instructions instructions,
-     :node-map (into {} (parse-node-map node-map))}))
+  (let [[dirs node-map] (utils/to-blocks input)]
+    {:dirs dirs, :node-map (into {} (parse-node-map node-map))}))
+
+
+(defn count-moves-to-target
+  "Starting at start, following the map and directions, count the number of
+  moves until we reach the predicate."
+  [{dirs :dirs, node-map :node-map} start pred]
+  (loop [current start
+         dirs (cycle (seq dirs))
+         n-moves 0]
+    (if (pred current)
+      n-moves
+      (recur ((node-map current) (first dirs)) (rest dirs) (inc n-moves)))))
 
 
 (defn solve-1
   "Follow the instructions until we reach ZZZ starting at AAA"
-  [{instructions :instructions, node-map :node-map}]
-  (loop [current "AAA"
-         instruction (cycle (seq instructions))
-         n-moves 0]
-    (if (= current "ZZZ")
-      n-moves
-      (recur ((node-map current) (first instruction))
-             (rest instruction)
-             (inc n-moves)))))
+  [problem]
+  (count-moves-to-target problem "AAA" #(= % "ZZZ")))
 
 
 (defn part-1
@@ -49,21 +53,14 @@
 ;; Not super happy with this part as you need to find the structure by guessing
 ;; and running some experiments... It is not in the problem text, and is in no
 ;; way a feature of the general problem.
-(defn find-loop
-  "The solutions loop, so if you find any solution it will loop with the same frequency"
-  [{instructions :instructions, node-map :node-map} start]
-  (loop [current start
-         dirs (cycle (seq instructions))
-         idx 0]
-    (if (= (last current) \Z)
-      idx
-      (recur ((node-map current) (first dirs)) (rest dirs) (inc idx)))))
-
-
-(defn find-all-loops
-  "Run find-loops on all start-positions, all pos ending in A"
+(defn find-loops
+  "Find loops for every starting positions. The data is so that when we reach
+  and ending position we loop perfectly."
   [input]
-  (map #(find-loop input %) (filter #(= (last %) \A) (keys (input :node-map)))))
+  (->> (input :node-map)
+       keys
+       (filter #(= (last %) \A))
+       (map (fn [start] (count-moves-to-target input start #(= (last %) \Z))))))
 
 
 (defn gcd
@@ -81,7 +78,7 @@
   [input]
   (->> input
        parse-input
-       find-all-loops
+       find-loops
        smallest-multiple))
 
 
@@ -90,13 +87,13 @@
 
 ;; Small unused utility function used to discover the structure of the data
 (defn debug-2
-  [{instructions :instructions, node-map :node-map}]
+  [{dirs :dirs, node-map :node-map}]
   (for [c (filter #(= (last %) \A) (keys node-map))]
     (loop [current c
            idx 0
            prev #{}]
       (if (prev [idx current])
         (filter #(= (last (last %)) \Z) prev)
-        (recur ((node-map current) (get instructions idx))
-               (mod (inc idx) (count instructions))
+        (recur ((node-map current) (get dirs idx))
+               (mod (inc idx) (count dirs))
                (conj prev [idx current]))))))
